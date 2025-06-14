@@ -64,6 +64,25 @@
       flex-wrap: wrap;
       gap: 32px;
     }
+    .group-title {
+      border-bottom:1px solid #dadada;
+      margin-top:38px;
+      margin-bottom:10px;
+      font-size:1.25rem;
+      color:#1b2064;
+      font-weight: bold;
+      letter-spacing: .03em;
+    }
+    .subgroup-title {
+      border-left: 4px solid #b5c7e7;
+      margin-bottom:10px;
+      margin-top:18px;
+      padding-left: 13px;
+      font-size:1.08rem;
+      color:#3050a0;
+      font-weight: 600;
+      letter-spacing: .01em;
+    }
     .image-card {
       background: #f1f5fb;
       border-radius: 14px;
@@ -124,6 +143,17 @@
       box-shadow: 0 1px 6px 0 rgba(0,0,0,0.05);
       line-height: 1.65;
     }
+    #json-viewer {
+      background: #252525;
+      color: #e8ffe3;
+      padding: 16px;
+      border-radius: 10px;
+      margin-top: 36px;
+      font-size: 0.95rem;
+      overflow-x: auto;
+      box-shadow: 0 1px 6px 0 rgba(0,0,0,0.06);
+      max-height: 500px;
+    }
     @media (max-width: 900px) {
       .main { padding: 18px;}
       .images-list { gap: 14px;}
@@ -133,13 +163,14 @@
       .header-logo, .header-placeholder { height: 40px; width: 40px; left: 8px; right: 8px;}
       .title { font-size: 1.3rem;}
       .header { padding: 18px 8px 12px 8px;}
+      #json-viewer { font-size: 0.84rem; }
     }
   </style>
 </head>
 <body>
   <div class="header">
     <img src="Vertical logo.png" class="header-logo" alt="Hammerhead Technology Logo">
-    <span class="title">Base64 Conversor</span>
+    <span class="title">Íconos Base64 Conversor</span>
     <span class="header-placeholder"></span>
   </div>
   <div class="main">
@@ -156,8 +187,8 @@
       <label for="json-upload"><b>Sube tu archivo JSON:</b></label>
       <input id="json-upload" type="file" accept=".json">
     </div>
-    <div style="margin-bottom: 20px;">Por defecto carga el archivo <i>agrupaciones_iconos_base64.json</i></div>
-    <div style="margin-top: 20px;" id="images-section"></div>
+    <div id="images-section"></div>
+    <pre id="json-viewer" style="display:none;"></pre>
     <button id="download-btn" class="download-btn" style="display:none;">Descargar el JSON modificado</button>
     <button id="reset-btn" class="reset-btn" style="display:none;">Restaurar JSON original</button>
   </div>
@@ -166,16 +197,27 @@
     let backupJson = null;
     let jsonPathMap = [];
 
-    function findBase64Nodes(obj, path = []) {
+    // Ahora guarda "group" (agrupación principal) y "subgroup" (subclasificación) si existe
+    function findBase64Nodes(obj, path = [], group = null, subgroup = null) {
       if (typeof obj !== 'object' || obj === null) return;
+      let isRootGroup = obj.hasOwnProperty('ID_AGRUPACION_PAGO') && obj.nombre;
+      let isSubGroup = !isRootGroup && obj.nombre && (Array.isArray(obj.subcategorias) || Array.isArray(obj.empresas));
+      let thisGroup = isRootGroup ? obj.nombre : group;
+      let thisSubGroup = isSubGroup ? obj.nombre : subgroup;
       for (const key in obj) {
         if (!obj.hasOwnProperty(key)) continue;
         if (/base64/i.test(key) && typeof obj[key] === 'string' && obj[key].length > 100) {
           let name = obj.nombre || obj.name || (path.length ? path[path.length - 1] : key);
-          jsonPathMap.push({name, path: [...path], base64Key: key});
+          jsonPathMap.push({
+            name,
+            path: [...path],
+            base64Key: key,
+            group: thisGroup || "Otros",
+            subgroup: thisSubGroup || null
+          });
         }
         if (typeof obj[key] === 'object') {
-          findBase64Nodes(obj[key], [...path, key]);
+          findBase64Nodes(obj[key], [...path, key], thisGroup, thisSubGroup);
         }
       }
     }
@@ -189,26 +231,60 @@
       if (node && key in node) node[key] = value;
     }
 
+    function showJsonViewer() {
+      const pre = document.getElementById('json-viewer');
+      if (originalJson) {
+        pre.style.display = '';
+        pre.textContent = JSON.stringify(originalJson, null, 2);
+      } else {
+        pre.style.display = 'none';
+        pre.textContent = '';
+      }
+    }
+
+    // Agrupa primero por grupo (agrupación), luego por subgrupo (subclasificación)
     function renderImagesSection() {
       const section = document.getElementById('images-section');
       if (!originalJson || jsonPathMap.length === 0) {
         section.innerHTML = '';
         document.getElementById('download-btn').style.display = 'none';
         document.getElementById('reset-btn').style.display = 'none';
+        showJsonViewer();
         return;
       }
+      // Agrupar por grupo y subgrupo
+      let grouped = {};
+      jsonPathMap.forEach((node, idx) => {
+        node._idx = idx;
+        if (!grouped[node.group]) grouped[node.group] = {};
+        let sub = node.subgroup || '';
+        if (!grouped[node.group][sub]) grouped[node.group][sub] = [];
+        grouped[node.group][sub].push(node);
+      });
 
-      section.innerHTML = `<div class="images-list">${jsonPathMap.map((node, idx) => {
-        const base64 = getNodeByPath(originalJson, node.path)[node.base64Key];
-        let type = (base64 || '').substring(0, 30).includes('svg+xml') ? 'image/svg+xml' : 'image/png';
-        return `
-          <div class="image-card" id="img-card-${idx}">
-            <div class="node-name">${node.name}</div>
-            <img id="img-preview-${idx}" src="data:${type};base64,${base64}" alt="${node.name}">
-            <input type="file" accept="image/png,image/svg+xml" data-idx="${idx}">
-          </div>
-        `;
-      }).join('')}</div>`;
+      let html = '';
+      for (const groupName in grouped) {
+        html += `<div class="group-title">${groupName}</div>`;
+        for (const subName in grouped[groupName]) {
+          if (subName) {
+            html += `<div class="subgroup-title">${subName}</div>`;
+          }
+          html += `<div class="images-list">`;
+          html += grouped[groupName][subName].map(node => {
+            const base64 = getNodeByPath(originalJson, node.path)[node.base64Key];
+            let type = (base64 || '').substring(0, 30).includes('svg+xml') ? 'image/svg+xml' : 'image/png';
+            return `
+              <div class="image-card" id="img-card-${node._idx}">
+                <div class="node-name">${node.name}</div>
+                <img id="img-preview-${node._idx}" src="data:${type};base64,${base64}" alt="${node.name}">
+                <input type="file" accept="image/png,image/svg+xml" data-idx="${node._idx}">
+              </div>
+            `;
+          }).join('');
+          html += `</div>`;
+        }
+      }
+      section.innerHTML = html;
       document.getElementById('download-btn').style.display = '';
       document.getElementById('reset-btn').style.display = '';
       jsonPathMap.forEach((node, idx) => {
@@ -221,11 +297,13 @@
               const base64 = result.split(',')[1];
               setNodeValueByPath(originalJson, node.path, node.base64Key, base64);
               document.getElementById(`img-preview-${idx}`).src = result;
+              showJsonViewer();
             };
             reader.readAsDataURL(file);
           }
         });
       });
+      showJsonViewer();
     }
 
     function loadJsonFile(file, onload) {
@@ -247,10 +325,11 @@
         if (!resp.ok) throw new Error();
         const json = await resp.json();
         originalJson = json;
-        backupJson = JSON.parse(JSON.stringify(json)); // Copia profunda
+        backupJson = JSON.parse(JSON.stringify(json));
         jsonPathMap = [];
         findBase64Nodes(originalJson);
         renderImagesSection();
+        showJsonViewer();
       } catch (err) {
         alert("No se pudo cargar el archivo agrupaciones_iconos_base64.json automáticamente.");
       }
@@ -261,10 +340,11 @@
         const resp = await fetch('agrupaciones_iconos_base64-ORIGINAL.json');
         if (!resp.ok) throw new Error();
         const json = await resp.json();
-        originalJson = JSON.parse(JSON.stringify(json)); // Copia profunda
+        originalJson = JSON.parse(JSON.stringify(json));
         jsonPathMap = [];
         findBase64Nodes(originalJson);
         renderImagesSection();
+        showJsonViewer();
       } catch (err) {
         alert("No se pudo cargar el archivo agrupaciones_iconos_base64-ORIGINAL.json para restaurar.");
       }
@@ -279,6 +359,7 @@
         jsonPathMap = [];
         findBase64Nodes(originalJson);
         renderImagesSection();
+        showJsonViewer();
       });
     });
 
