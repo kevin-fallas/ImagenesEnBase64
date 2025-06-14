@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Administrador imágenes en Base64</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f8fafc;
+      margin: 0;
+      color: #171f44;
+    }
+    .header {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px 16px 24px;
+      background: #fff;
+      box-shadow: 0 2px 10px 0 rgba(0,0,0,0.06);
+      margin-bottom: 24px;
+    }
+    .header-logo {
+      position: absolute;
+      left: 24px;
+      height: 60px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .title {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #171f44;
+      text-align: center;
+      flex: 0 0 auto;
+      margin: 0;
+    }
+    .header-placeholder {
+      position: absolute;
+      right: 24px;
+      width: 60px;
+      height: 60px;
+      opacity: 0;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .main {
+      max-width: 880px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 32px;
+      border-radius: 18px;
+      box-shadow: 0 2px 18px 0 rgba(0,0,0,0.07);
+    }
+    .upload-section {
+      margin-bottom: 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .images-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 32px;
+    }
+    .image-card {
+      background: #f1f5fb;
+      border-radius: 14px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+      padding: 18px 18px 12px 18px;
+      width: 240px;
+      text-align: center;
+      position: relative;
+    }
+    .image-card img {
+      max-width: 120px;
+      max-height: 120px;
+      margin-bottom: 14px;
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: 0 1px 6px 0 rgba(0,0,0,0.03);
+    }
+    .image-card .node-name {
+      font-weight: bold;
+      font-size: 1rem;
+      margin-bottom: 8px;
+      color: #202450;
+    }
+    .image-card input[type="file"] {
+      margin: 8px 0 0 0;
+    }
+    .download-btn, .reset-btn {
+      margin-top: 28px;
+      display: block;
+      width: 100%;
+      padding: 16px;
+      font-size: 1.1rem;
+      background: #171f44;
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    .reset-btn {
+      background: #ff4a4a;
+      margin-top: 16px;
+    }
+    .download-btn:hover {
+      background: #293396;
+    }
+    .reset-btn:hover {
+      background: #be2626;
+    }
+    .leyenda {
+      margin-bottom: 30px;
+      background: #e8f0fe;
+      padding: 14px 18px;
+      border-radius: 12px;
+      color: #2a3b78;
+      font-size: 1.08rem;
+      box-shadow: 0 1px 6px 0 rgba(0,0,0,0.05);
+      line-height: 1.65;
+    }
+    @media (max-width: 900px) {
+      .main { padding: 18px;}
+      .images-list { gap: 14px;}
+      .image-card { width: 100%;}
+    }
+    @media (max-width: 600px) {
+      .header-logo, .header-placeholder { height: 40px; width: 40px; left: 8px; right: 8px;}
+      .title { font-size: 1.3rem;}
+      .header { padding: 18px 8px 12px 8px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="Vertical logo.png" class="header-logo" alt="Hammerhead Technology Logo">
+    <span class="title">Base64 Conversor</span>
+    <span class="header-placeholder"></span>
+  </div>
+  <div class="main">
+    <div class="leyenda">
+      <b>¿Qué puedes hacer aquí?</b><br>
+      - Visualiza y edita imágenes codificadas en base64 dentro de tu archivo JSON.<br>
+      - Sube tu propio archivo JSON, o usa el que se carga automáticamente.<br>
+      - Cambia cualquier imagen por un nuevo archivo PNG o SVG (haz click en “Elegir archivo” debajo de cada imagen).<br>
+      - Descarga el JSON modificado con los cambios.<br>
+      - Restaura todos los valores a los originales presionando el botón rojo.<br>
+      <i>Este administrador no sobreescribe archivos en tu PC, la descarga genera una copia nueva.</i>
+    </div>
+    <div class="upload-section">
+      <label for="json-upload"><b>Sube tu archivo JSON:</b></label>
+      <input id="json-upload" type="file" accept=".json">
+    </div>
+    <div style="margin-bottom: 20px;">Por defecto carga el archivo <i>agrupaciones_iconos_base64.json</i></div>
+    <div style="margin-top: 20px;" id="images-section"></div>
+    <button id="download-btn" class="download-btn" style="display:none;">Descargar el JSON modificado</button>
+    <button id="reset-btn" class="reset-btn" style="display:none;">Restaurar JSON original</button>
+  </div>
+  <script>
+    let originalJson = null;
+    let backupJson = null;
+    let jsonPathMap = [];
+
+    function findBase64Nodes(obj, path = []) {
+      if (typeof obj !== 'object' || obj === null) return;
+      for (const key in obj) {
+        if (!obj.hasOwnProperty(key)) continue;
+        if (/base64/i.test(key) && typeof obj[key] === 'string' && obj[key].length > 100) {
+          let name = obj.nombre || obj.name || (path.length ? path[path.length - 1] : key);
+          jsonPathMap.push({name, path: [...path], base64Key: key});
+        }
+        if (typeof obj[key] === 'object') {
+          findBase64Nodes(obj[key], [...path, key]);
+        }
+      }
+    }
+
+    function getNodeByPath(obj, path) {
+      return path.reduce((o, k) => (o ? o[k] : undefined), obj);
+    }
+
+    function setNodeValueByPath(obj, path, key, value) {
+      const node = getNodeByPath(obj, path);
+      if (node && key in node) node[key] = value;
+    }
+
+    function renderImagesSection() {
+      const section = document.getElementById('images-section');
+      if (!originalJson || jsonPathMap.length === 0) {
+        section.innerHTML = '';
+        document.getElementById('download-btn').style.display = 'none';
+        document.getElementById('reset-btn').style.display = 'none';
+        return;
+      }
+
+      section.innerHTML = `<div class="images-list">${jsonPathMap.map((node, idx) => {
+        const base64 = getNodeByPath(originalJson, node.path)[node.base64Key];
+        let type = (base64 || '').substring(0, 30).includes('svg+xml') ? 'image/svg+xml' : 'image/png';
+        return `
+          <div class="image-card" id="img-card-${idx}">
+            <div class="node-name">${node.name}</div>
+            <img id="img-preview-${idx}" src="data:${type};base64,${base64}" alt="${node.name}">
+            <input type="file" accept="image/png,image/svg+xml" data-idx="${idx}">
+          </div>
+        `;
+      }).join('')}</div>`;
+      document.getElementById('download-btn').style.display = '';
+      document.getElementById('reset-btn').style.display = '';
+      jsonPathMap.forEach((node, idx) => {
+        document.querySelector(`#img-card-${idx} input[type="file"]`).addEventListener('change', function (evt) {
+          const file = evt.target.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+              const result = e.target.result;
+              const base64 = result.split(',')[1];
+              setNodeValueByPath(originalJson, node.path, node.base64Key, base64);
+              document.getElementById(`img-preview-${idx}`).src = result;
+            };
+            reader.readAsDataURL(file);
+          }
+        });
+      });
+    }
+
+    function loadJsonFile(file, onload) {
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          const json = JSON.parse(e.target.result);
+          onload(json);
+        } catch (err) {
+          alert("El archivo JSON no es válido.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    async function loadDefaultJson() {
+      try {
+        const resp = await fetch('agrupaciones_iconos_base64.json');
+        if (!resp.ok) throw new Error();
+        const json = await resp.json();
+        originalJson = json;
+        backupJson = JSON.parse(JSON.stringify(json)); // Copia profunda
+        jsonPathMap = [];
+        findBase64Nodes(originalJson);
+        renderImagesSection();
+      } catch (err) {
+        alert("No se pudo cargar el archivo agrupaciones_iconos_base64.json automáticamente.");
+      }
+    }
+
+    async function resetToOriginalJson() {
+      try {
+        const resp = await fetch('agrupaciones_iconos_base64-ORIGINAL.json');
+        if (!resp.ok) throw new Error();
+        const json = await resp.json();
+        originalJson = JSON.parse(JSON.stringify(json)); // Copia profunda
+        jsonPathMap = [];
+        findBase64Nodes(originalJson);
+        renderImagesSection();
+      } catch (err) {
+        alert("No se pudo cargar el archivo agrupaciones_iconos_base64-ORIGINAL.json para restaurar.");
+      }
+    }
+
+    document.getElementById('json-upload').addEventListener('change', function (evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+      loadJsonFile(file, (json) => {
+        originalJson = json;
+        backupJson = JSON.parse(JSON.stringify(json));
+        jsonPathMap = [];
+        findBase64Nodes(originalJson);
+        renderImagesSection();
+      });
+    });
+
+    document.getElementById('download-btn').addEventListener('click', function () {
+      if (!originalJson) return;
+      const blob = new Blob([JSON.stringify(originalJson, null, 2)], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'agrupaciones_iconos_base64.json';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 500);
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', async function () {
+      if (confirm("¿Estás seguro que deseas restaurar el JSON original? Se perderán los cambios no guardados.")) {
+        await resetToOriginalJson();
+      }
+    });
+
+    window.onload = function () {
+      loadDefaultJson();
+    };
+  </script>
+</body>
+</html>
